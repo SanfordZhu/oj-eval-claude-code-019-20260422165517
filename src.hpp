@@ -9,10 +9,14 @@ void Calculate(std::vector<Matrix *> keys, std::vector<Matrix *> values,
   for (size_t i = 0; i < keys.size(); ++i) {
     auto Q = rater.GetNextQuery();
 
-    // Move Q to shared for computation
+    // Move Q, and the first (i+1) keys/values to shared for computation
     gpu_sim.MoveMatrixToSharedMem(Q);
+    for (size_t j = 0; j <= i; ++j) {
+      gpu_sim.MoveMatrixToSharedMem(keys[j]);
+      gpu_sim.MoveMatrixToSharedMem(values[j]);
+    }
 
-    // Build K_acc and V_acc by concatenating first (i+1) rows in HBM, then move to shared
+    // Build K_acc and V_acc in shared memory by vertical concatenation
     Matrix *K_acc = nullptr;
     Matrix *V_acc = nullptr;
 
@@ -20,15 +24,13 @@ void Calculate(std::vector<Matrix *> keys, std::vector<Matrix *> values,
       if (j == 0) {
         K_acc = matrix_memory_allocator.Allocate("K_acc_0");
         V_acc = matrix_memory_allocator.Allocate("V_acc_0");
-        // Copy in HBM to initialize accumulators
-        gpu_sim.Copy(keys[0], K_acc, kInGpuHbm);
-        gpu_sim.Copy(values[0], V_acc, kInGpuHbm);
+        gpu_sim.Copy(keys[0], K_acc, kInSharedMemory);
+        gpu_sim.Copy(values[0], V_acc, kInSharedMemory);
       } else {
         Matrix *new_K = matrix_memory_allocator.Allocate("K_acc_concat");
         Matrix *new_V = matrix_memory_allocator.Allocate("V_acc_concat");
-        // Concatenate vertically along rows in HBM to minimize shared memory usage
-        gpu_sim.Concat(K_acc, keys[j], new_K, 0, kInGpuHbm);
-        gpu_sim.Concat(V_acc, values[j], new_V, 0, kInGpuHbm);
+        gpu_sim.Concat(K_acc, keys[j], new_K, 0, kInSharedMemory);
+        gpu_sim.Concat(V_acc, values[j], new_V, 0, kInSharedMemory);
         gpu_sim.ReleaseMatrix(K_acc);
         gpu_sim.ReleaseMatrix(V_acc);
         K_acc = new_K;
@@ -36,13 +38,10 @@ void Calculate(std::vector<Matrix *> keys, std::vector<Matrix *> values,
       }
     }
 
-    // Transpose K_acc (still in HBM), then move both K_acc and V_acc to shared for matmuls
-    gpu_sim.Transpose(K_acc, kInGpuHbm);
+    // Transpose K_acc in shared
+    gpu_sim.Transpose(K_acc, kInSharedMemory);
 
-    gpu_sim.MoveMatrixToSharedMem(K_acc);
-    gpu_sim.MoveMatrixToSharedMem(V_acc);
-
-    // Compute scores = Q * K_acc (Q in shared, K_acc in shared)
+    // Compute scores = Q * K_acc
     Matrix *scores = matrix_memory_allocator.Allocate("scores_QKt");
     gpu_sim.MatMul(Q, K_acc, scores);
 
