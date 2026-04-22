@@ -1,36 +1,8 @@
 #include "simulator.hpp"
 #include "src.hpp"
-#include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
-#include <sstream>
-#include <string>
 #include <vector>
-
-class DataLoader {
-public:
-  bool loadDataFromFile(const std::string &filename, std::vector<float> &data) {
-    std::ifstream file(filename);
-
-    if (!file.is_open()) {
-      std::cerr << "Error: Could not open file " << filename << std::endl;
-      return false;
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-      std::stringstream ss(line);
-      float value;
-      while (ss >> value) {
-        data.push_back(value);
-      }
-    }
-
-    file.close();
-    return true;
-  }
-};
 
 int main() {
   sjtu::GpuSimulator gpu_sim;
@@ -40,80 +12,29 @@ int main() {
   std::vector<sjtu::Matrix *> queries;
   std::vector<sjtu::Matrix *> answers;
 
-  // Read Data from File
-  std::string filename = "./data/keys.txt";
-  std::vector<float> data;
+  const int n = 4;
+  const int d = 8;
 
-  DataLoader loader;
-
-  if (loader.loadDataFromFile(filename, data)) {
-    std::cerr << "Data loaded successfully!" << std::endl;
-  } else {
-    std::cerr << "Failed to load data from file." << std::endl;
-  }
-
-  for (int i = 0; i < 32; ++i) {
-    keys.push_back(
-        new sjtu::Matrix(1, 512,
-                         std::vector<float>(data.begin() + i * 512,
-                                            data.begin() + (i + 1) * 512),
-                         gpu_sim));
+  for (int i = 0; i < n; ++i) {
+    std::vector<float> k(d), v(d);
+    for (int j = 0; j < d; ++j) {
+      k[j] = static_cast<float>(rand()) / RAND_MAX;
+      v[j] = static_cast<float>(rand()) / RAND_MAX;
+    }
+    keys.push_back(new sjtu::Matrix(1, d, k, gpu_sim));
     matrix_memory_allocator.Bind(keys.back(), "key_" + std::to_string(i));
-  }
-
-  data.clear();
-
-  filename = "./data/values.txt";
-
-  if (loader.loadDataFromFile(filename, data)) {
-    std::cerr << "Data loaded successfully!" << std::endl;
-  } else {
-    std::cerr << "Failed to load data from file." << std::endl;
-  }
-
-  for (int i = 0; i < 32; ++i) {
-    values.push_back(
-        new sjtu::Matrix(1, 512,
-                         std::vector<float>(data.begin() + i * 512,
-                                            data.begin() + (i + 1) * 512),
-                         gpu_sim));
+    values.push_back(new sjtu::Matrix(1, d, v, gpu_sim));
     matrix_memory_allocator.Bind(values.back(), "value_" + std::to_string(i));
   }
 
-  data.clear();
-
-  filename = "./data/queries.txt";
-
-  if (loader.loadDataFromFile(filename, data)) {
-    std::cerr << "Data loaded successfully!" << std::endl;
-  } else {
-    std::cerr << "Failed to load data from file." << std::endl;
-  }
-
-  for (int i = 0; i < 32; ++i) {
-    queries.push_back(new sjtu::Matrix(
-        i + 1, 512,
-        std::vector<float>(data.begin() + i * (i + 1) * 512 / 2,
-                           data.begin() + (i + 1) * (i + 2) * 512 / 2),
-        gpu_sim));
+  for (int i = 0; i < n; ++i) {
+    std::vector<float> q((i + 1) * d), ans((i + 1) * d, 0.0f);
+    for (int j = 0; j < (i + 1) * d; ++j) {
+      q[j] = static_cast<float>(rand()) / RAND_MAX;
+    }
+    queries.push_back(new sjtu::Matrix(i + 1, d, q, gpu_sim));
     matrix_memory_allocator.Bind(queries.back(), "query_" + std::to_string(i));
-  }
-
-  data.clear();
-
-  filename = "./data/ans.txt";
-
-  if (loader.loadDataFromFile(filename, data)) {
-    std::cerr << "Data loaded successfully!" << std::endl;
-  } else {
-    std::cerr << "Failed to load data from file." << std::endl;
-  }
-  for (int i = 0; i < 32; ++i) {
-    answers.push_back(new sjtu::Matrix(
-        i + 1, 512,
-        std::vector<float>(data.begin() + i * (i + 1) * 512 / 2,
-                           data.begin() + (i + 1) * (i + 2) * 512 / 2),
-        gpu_sim));
+    answers.push_back(new sjtu::Matrix(i + 1, d, ans, gpu_sim));
     matrix_memory_allocator.Bind(answers.back(), "answer_" + std::to_string(i));
   }
 
